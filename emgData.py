@@ -7,34 +7,28 @@ import matplotlib.pyplot as plt
 class Listener(myo.DeviceListener):
     def __init__(self):
         self.emg_data = []
-        self.should_stop = False
+        self.timestamps = []
     
     #confirms connection
     def on_connected(self, event):
         print("Connected.")
+        event.device.stream_emg(myo.StreamEmg.enabled)
         event.device.vibrate(myo.VibrationType.medium)
 
-    #turns off program when double tap
-    def on_pose(self, event):
-        print(f"Detected pose: {event.pose}")
-        if event.pose == myo.Pose.wave_out:
-            self.should_stop = True
-            print("Waved out. Program should stop.")
-    
     #adds emg data
-    def on_emg(self, myo, timestamp, emg):
-        self.emg_data.append(emg)
-        print(f"Getting EMG data: {emg}")
+    def on_emg(self, event):
+        self.emg_data.append(event.emg)
+        self.timestamps.append(event.timestamp)
 
 def plot(emg_df):
     #plot and save emg data
     plt.figure(figsize=(12,6))
 
-    for i in range(emg_df.shape[1]):
-        plt.plot(emg_df.index, emg_df[i])
+    for i in range(emg_df.shape[1] - 1):
+        plt.plot(emg_df['Time'], emg_df[f'channel_{i+1}'], label=f'Channel {i+1}')
 
     plt.title('EMG data')
-    plt.xlabel('Index')
+    plt.xlabel('Time (ms)')
     plt.ylabel('EMG Value')
     plt.savefig('emg_dataplt.png')
     plt.show()
@@ -45,15 +39,18 @@ def main():
     hub = myo.Hub()
     listener = Listener()
 
-    #listens for emg data on pose
-    while not listener.should_stop:
-        hub.run(listener.on_event, duration_ms=200)
-    
-    print("Program has stopped recording EMG data.")
+    #records emg data for 2 seconds
+    print("Programs has started recording EMG data")
+    hub.run(listener.on_event, duration_ms=2000)
     hub.stop()
+    print("Program has stopped recording EMG data")
+
+    start_time = listener.timestamps[0] if listener.timestamps else 0
+    time_in_ms = [(ts - start_time) * 1e-3 for ts in listener.timestamps]
     
     #save the emg data to csv file
-    emg_df = pd.DataFrame(listener.emg_data)
+    emg_df = pd.DataFrame(listener.emg_data, columns=[f'channel_{i+1}' for i in range(8)])
+    emg_df['Time'] = time_in_ms
     emg_df.to_csv('emg_data.csv', index=False)
     print("Data saved.")
 
